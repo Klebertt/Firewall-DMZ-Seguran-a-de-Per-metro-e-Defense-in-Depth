@@ -49,7 +49,7 @@ Bash
 iptables -A FORWARD -p tcp --dport 6881:6889 -j DROP
 Depois: O teste de porta nc -zv -w 2 10.0.2.10 6881 no pc1 dá Timeout, confirmando que os pacotes TCP na faixa 6881-6889 foram descartados.
 
-3. Análise Teórica
+## 3. Análise Teórica
 1. Camada 2 (Enlace)
 Para que serve: Garante o bloqueio de um dispositivo específico na rede local, independente do IP configurado nele.
 
@@ -64,12 +64,12 @@ Filtro de Porta vs DPI: O bloqueio por porta só funciona se o programa usar a p
 4. Camada 7 (Aplicação)
 Limitação do iptables: O iptables lê apenas os cabeçalhos de rede e transporte. Ele não consegue identificar se uma requisição HTTP traz um ataque de SQL Injection ou código malicioso no corpo da mensagem.
 
-4. Proposta de Controle em Camada 7 (L7)
+## 4. Proposta de Controle em Camada 7 (L7)
 Para adicionar proteção na Camada 7, a solução é instalar um WAF (Web Application Firewall) como o ModSecurity integrado a um proxy reverso Nginx na frente do servidor Web.
 
 O WAF analisa o tráfego HTTP/HTTPS por completo (headers, cookies e dados POST) e aplica as regras do OWASP CRS para barrar ataques de aplicação (SQLi, XSS, upload de shells) antes que cheguem ao servidor final.
 
-5. Defesa em Profundidade (Defense in Depth)
+## 5. Defesa em Profundidade (Defense in Depth)
 A rede foi montada em camadas para que a falha de uma proteção não comprometa todo o sistema:
 
 Se o servidor Web for invadido via falha em L7, as regras em L3/L4 do firewall impedem que o atacante acesse a rede interna (LAN).
