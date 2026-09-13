@@ -1,0 +1,47 @@
+# ==============================================================================
+# SCRIPT DE INICIALIZACAO E CONFIGURACAO DE FIREWALL (fw)
+# ==============================================================================
+
+# 1. ATRIBUICAO DE ENDERECOS IP NAS INTERFACES
+ip addr add 198.51.100.2/30 dev eth0
+ip addr add 10.0.1.1/24 dev eth1
+ip addr add 10.0.2.1/24 dev eth2
+ip addr add 10.0.3.1/24 dev eth3
+
+# 2. CONFIGURACAO DE ROTEAMENTO E ENCAMINHAMENTO DE PACOTES
+ip route add default via 198.51.100.1
+sysctl -w net.ipv4.ip_forward=1
+
+# 3. LIMPEZA DE REGRAS ANTERIORES (FLUSH)
+iptables -F
+iptables -X
+iptables -t nat -F
+
+# 4. POLITICA DE SEGURANCA PADRAO (DEFAULT POLICIES - DROP)
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT ACCEPT
+
+# 5. PERMISSOES DE LOOPBACK E CONEXOES ESTABELECIDAS (STATEFUL INSPECTION)
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+# 6. REGRAS DE CONTROLE L2 (BLOQUEIO POR ENDERECO MAC - HOST PC2)
+# Nota: Subtitua o MAC abaixo caso o container recrie uma nova interface
+iptables -A FORWARD -i eth1 -m mac --mac-source 02:42:0a:00:01:0b -j DROP
+
+# 7. REGRAS DE CONTROLE L4 (BLOQUEIO DE SERVICOS P2P / BITTORRENT)
+iptables -A FORWARD -p tcp --dport 6881:6889 -j DROP
+
+# 8. REGRAS DE CONTROLE L3/L4 (PERMISSOES LEGITIMAS LAN -> DMZ E INTERNET)
+# Liberar LAN para Internet via Roteador r0
+iptables -A FORWARD -i eth1 -s 10.0.1.0/24 -o eth0 -j ACCEPT
+
+# Liberar LAN -> DMZ HTTP (Porta 80) e HTTPS (Porta 443)
+iptables -A FORWARD -i eth1 -s 10.0.1.0/24 -o eth2 -d 10.0.2.10 -p tcp --dport 80 -j ACCEPT
+iptables -A FORWARD -i eth1 -s 10.0.1.0/24 -o eth2 -d 10.0.2.10 -p tcp --dport 443 -j ACCEPT
+
+# Liberar LAN -> DMZ DNS (UDP/TCP Porta 53)
+iptables -A FORWARD -i eth1 -s 10.0.1.0/24 -o eth2 -d 10.0.2.11 -p udp --dport 53 -j ACCEPT
+iptables -A FORWARD -i eth1 -s 10.0.1.0/24 -o eth2 -d 10.0.2.11 -p tcp --dport 53 -j ACCEPT
