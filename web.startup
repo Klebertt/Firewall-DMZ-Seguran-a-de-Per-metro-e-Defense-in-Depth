@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+ip addr add 10.0.2.10/24 dev eth0 2>/dev/null || true
+ip route replace default via 10.0.2.1 dev eth0
+
+mkdir -p /var/www/lab
+printf 'Servidor Web da DMZ - Kathara Firewall Lab\n' > /var/www/lab/index.html
+
+if command -v python3 >/dev/null 2>&1; then
+    cd /var/www/lab
+    python3 -m http.server 80 > /tmp/web-http.log 2>&1 &
+elif command -v busybox >/dev/null 2>&1; then
+    busybox httpd -f -p 80 -h /var/www/lab > /tmp/web-http.log 2>&1 &
+else
+    echo 'ERRO: nenhum servidor HTTP disponível (python3/busybox).' > /tmp/web-http.log
+fi

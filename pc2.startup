@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+ip addr add 10.0.1.11/24 dev eth0 2>/dev/null || true
+ip route replace default via 10.0.1.1 dev eth0

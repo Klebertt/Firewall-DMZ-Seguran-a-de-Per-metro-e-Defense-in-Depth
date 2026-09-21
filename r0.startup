@@ -1,0 +1,59 @@
+#!/bin/sh
+set -eu
+
+# r0 - roteador de borda
+# eth0 = enlace com o firewall (198.51.100.0/30)
+# eth1 = interface bridged adicionada pelo Kathara para acesso à rede do host/Internet
+
+ip addr add 198.51.100.2/30 dev eth0 2>/dev/null || true
+ip link set eth0 up
+ip link set eth1 up 2>/dev/null || true
+
+# A interface bridged recebe configuração do backend do Kathara/Docker.
+# Aguarda alguns segundos caso o endereço ainda esteja sendo aplicado.
+i=0
+while [ "$i" -lt 10 ]; do
+    if ip -4 addr show dev eth1 2>/dev/null | grep -q 'inet '; then
+        break
+    fi
+    i=$((i + 1))
+    sleep 1
+done
+
+# Todas as redes internas estão atrás do fw (198.51.100.1).
+ip route replace 10.0.0.0/16 via 198.51.100.1 dev eth0
+sysctl -w net.ipv4.ip_forward=1 >/dev/null
+
+# Regras do roteador de borda/NAT.
+iptables -F
+iptables -X
+iptables -t nat -F
+iptables -t nat -X
+iptables -P INPUT ACCEPT
+iptables -P OUTPUT ACCEPT
+iptables -P FORWARD DROP
+
+# Respostas de conexões já permitidas.
+iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+# Redes internas -> Internet.
+iptables -A FORWARD -i eth0 -o eth1 -s 10.0.0.0/16 \
+    -m conntrack --ctstate NEW -j ACCEPT
+iptables -t nat -A POSTROUTING -o eth1 -s 10.0.0.0/16 -j MASQUERADE
+
+# Internet -> servidor Web da DMZ.
+# O pacote é traduzido aqui e depois atravessa o fw até 10.0.2.10:80.
+iptables -t nat -A PREROUTING -i eth1 -p tcp --dport 80 \
+    -j DNAT --to-destination 10.0.2.10:80
+iptables -A FORWARD -i eth1 -o eth0 -p tcp -d 10.0.2.10 --dport 80 \
+    -m conntrack --ctstate NEW -j ACCEPT
+
+# Registra informações úteis para diagnóstico.
+{
+    echo '=== r0 ==='
+    ip -br addr
+    echo '--- rotas ---'
+    ip route
+    echo '--- NAT ---'
+    iptables -t nat -L -n -v
+} > /tmp/r0-status.txt 2>&1 || true

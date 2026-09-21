@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+ip addr add 10.0.2.11/24 dev eth0 2>/dev/null || true
+ip route replace default via 10.0.2.1 dev eth0
+
+# Servidor DNS mínimo e determinístico: lab.test -> 10.0.2.10.
+if command -v python3 >/dev/null 2>&1; then
+    python3 /root/dns_server.py > /tmp/dns-server.log 2>&1 &
+elif command -v dnsmasq >/dev/null 2>&1; then
+    dnsmasq --no-daemon --no-resolv --listen-address=10.0.2.11 \
+      --address=/lab.test/10.0.2.10 --log-facility=/tmp/dns-server.log &
+else
+    echo 'ERRO: python3/dnsmasq não encontrados.' > /tmp/dns-server.log
+fi
