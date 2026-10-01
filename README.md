@@ -1,410 +1,171 @@
-# Laboratório Kathará — Firewall + DMZ + Segurança de Perímetro
+Firewall, DMZ e Defense in Depth no Kathará
+1. Sobre o trabalho
+Neste laboratório foi montada no Kathará uma rede com LAN, DMZ, rede de gerenciamento, um roteador de borda (r0) e um firewall (fw).
+A ideia é começar com a rede funcionando normalmente e, depois, aplicar regras de segurança para controlar quais comunicações podem ou não passar pelo firewall. Também são feitos testes em diferentes camadas da rede, usando MAC, IP, ICMP e portas TCP/UDP.
+A topologia usada é a mesma do enunciado.
+2. Topologia e endereçamento
+Dispositivo	Endereço	Função
+r0/eth1	198.51.100.1/30	Ligação entre o roteador e o firewall
+fw/eth0	198.51.100.2/30	Interface WAN do firewall
+fw/eth1	10.0.1.1/24	Gateway da LAN
+fw/eth2	10.0.2.1/24	Gateway da DMZ
+fw/eth3	10.0.3.1/24	Gateway da rede de gerenciamento
+pc1	10.0.1.10/24	Estação da LAN
+pc2	10.0.1.11/24	Estação da LAN
+web	10.0.2.10/24	Servidor Web da DMZ
+dns	10.0.2.11/24	Servidor DNS da DMZ
+adm	10.0.3.10/24	Máquina de gerenciamento
 
-## 1. Objetivo
 
-Este repositório implementa a topologia da atividade e contém a política de Segurança de Perímetro, os experimentos L2/L3/L4, uma proposta L7 e a discussão de Defense in Depth.
-
-A configuração final usa **default deny** no firewall e filtragem **stateful** para permitir respostas de conexões autorizadas.
-
-## 2. Topologia e endereçamento
-
-A WAN foi ajustada para seguir o plano da figura: **r0 = 198.51.100.2/30** e **fw = 198.51.100.1/30**.
-
-| Nó/interface | Endereço | Função |
-|---|---:|---|
-| `r0/eth0` | `198.51.100.2/30` | Gateway WAN do firewall |
-| `r0/eth1` | dinâmico (bridged) | Saída para rede do host/Internet |
-| `fw/eth0` | `198.51.100.1/30` | WAN |
-| `fw/eth1` | `10.0.1.1/24` | Gateway LAN |
-| `fw/eth2` | `10.0.2.1/24` | Gateway DMZ |
-| `fw/eth3` | `10.0.3.1/24` | Gateway MGMT |
-| `pc1` | `10.0.1.10/24` | Cliente LAN |
-| `pc2` | `10.0.1.11/24` | Cliente LAN |
-| `web` | `10.0.2.10/24` | Servidor HTTP da DMZ |
-| `dns` | `10.0.2.11/24` | Servidor DNS da DMZ |
-| `adm` | `10.0.3.10/24` | Gerenciamento opcional |
-
-MACs fixados para o experimento L2:
-
-- `pc1`: `02:42:0a:00:01:0a`
-- `pc2`: `02:42:0a:00:01:0b`
-
-O `r0[bridged]="true"` adiciona uma interface ligada à rede do host via NAT. O mapeamento `localhost:8080 -> r0:80` foi mantido apenas para facilitar o teste externo do Web publicado; ele não altera o plano de endereçamento da topologia.
-
-## 3. Estrutura dos arquivos de firewall
-
-Dentro do nó `fw`, os arquivos desta pasta do repositório aparecem em `/root/firewall/`:
-
-- `baseline.sh` — deixa o firewall sem filtragem restritiva;
-- `perimeter.sh` — aplica a política final de perímetro;
-- `l2_block_pc2.sh` — bloqueia o MAC fixo de `pc2`;
-- `l3_block_icmp.sh` — bloqueia ICMP LAN → DMZ;
-- `l3_block_destino.sh` — bloqueia o destino de teste `10.0.2.10`;
-- `l4_block_p2p.sh` — bloqueia TCP/UDP `6881:6889`;
-- `show_rules.sh` — mostra regras e contadores.
-
-O `fw.startup` sobe o laboratório com a **política final de perímetro ativa**. Para reproduzir a etapa inicial da atividade, execute `baseline.sh` antes dos testes da baseline.
-
-## 4. Inicialização
-
-Na pasta do laboratório:
-
-```bash
+Gateways utilizados:
+- LAN: 10.0.1.1
+- DMZ: 10.0.2.1
+- MGMT: 10.0.3.1
+- saída do firewall: 198.51.100.1
+3. Como iniciar o laboratório
+Na pasta do projeto:
 kathara lstart
-```
-
-Para abrir um nó:
-
-```bash
-kathara connect fw
+Para entrar em um dispositivo:
 kathara connect pc1
 kathara connect pc2
 kathara connect web
 kathara connect dns
+kathara connect fw
 kathara connect r0
-```
-
-Ao terminar:
-
-```bash
+Para encerrar o laboratório:
 kathara lclean
-```
-
-## 5. Baseline — antes das regras restritivas
-
-No `fw`:
-
-```bash
-/root/firewall/baseline.sh
-```
-
-### Testes
-
-No `pc1`:
-
-```bash
+4. Baseline da rede
+Antes de aplicar as regras restritivas, a primeira etapa é verificar se o endereçamento e o roteamento estão funcionando.
+No firewall, as regras podem ser temporariamente limpas e as políticas deixadas como ACCEPT:
+iptables -F
+iptables -X
+iptables -t nat -F
+iptables -t nat -X
+iptables -P INPUT ACCEPT
+iptables -P FORWARD ACCEPT
+iptables -P OUTPUT ACCEPT
+sysctl -w net.ipv4.ip_forward=1
+No r0, o NAT de saída precisa continuar ativo:
+iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+Alguns testes que podem ser feitos a partir do pc1:
+ping -c 3 10.0.1.1
 ping -c 3 10.0.2.10
-curl -v http://10.0.2.10
-```
-
-DNS:
-
-```bash
-dig @10.0.2.11 lab.test A
-```
-
-Se `dig` não estiver disponível, use:
-
-```bash
-nslookup lab.test 10.0.2.11
-```
-
-Internet:
-
-```bash
+curl http://10.0.2.10
+Para testar o DNS:
+dig @10.0.2.11 lab.test
+E, caso o ambiente esteja com acesso externo funcionando:
 ping -c 3 8.8.8.8
 curl -I http://example.com
-```
-
-No `fw`, confirme o encaminhamento:
-
-```bash
+Também é possível acompanhar os pacotes no firewall com:
 tcpdump -ni any
-```
+Essa etapa serve para confirmar que a rede funciona antes de começar os bloqueios.
+5. Firewall de perímetro
+Depois da baseline, o fw.startup aplica a política de segurança.
+A ideia principal é usar default deny: o tráfego é bloqueado por padrão e só é liberado quando existe uma regra permitindo.
+As políticas principais são:
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT ACCEPT
+O firewall também aceita pacotes de conexões que já foram estabelecidas:
+iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+Isso permite, por exemplo, que o pc1 inicie uma conexão com a Internet e receba a resposta normalmente, sem precisar liberar novas conexões vindas da Internet para a LAN.
+A política final fica assim:
+Comunicação	Política
+LAN → Internet	Permitida
+LAN → Web/DNS da DMZ	Permitida
+Internet → Web	Permitida na porta 80
+Internet → LAN	Bloqueada
+DMZ → LAN em novas conexões	Bloqueada
+Respostas de conexões permitidas	Permitidas
 
-### Evidência sugerida
 
-Salve resultados reais na pasta compartilhada:
-
-```bash
-ping -c 3 10.0.2.10 2>&1 | tee /shared/evidencias/baseline_ping_dmz.txt
-curl -v http://10.0.2.10 2>&1 | tee /shared/evidencias/baseline_web.txt
-```
-
-## 6. Segurança de Perímetro
-
-No `fw`:
-
-```bash
-/root/firewall/perimeter.sh
-/root/firewall/show_rules.sh
-```
-
-Política implementada:
-
-| Comunicação | Política |
-|---|---|
-| LAN → Internet | ✅ Permitir |
-| LAN → Web/DNS da DMZ | ✅ Permitir somente os serviços necessários |
-| Internet → Web da DMZ | ✅ Permitir TCP/80 |
-| Internet → LAN | ❌ Bloquear |
-| DMZ → LAN (novas conexões) | ❌ Bloquear |
-| Respostas de conexões permitidas | ✅ `ESTABLISHED,RELATED` |
-
-### LAN → Internet
-
-No `pc1`:
-
-```bash
+As regras podem ser conferidas com:
+iptables -L FORWARD -n -v --line-numbers
+6. Testes da política de perímetro
+LAN para Internet
+No pc1:
 ping -c 3 8.8.8.8
 curl -I http://example.com
-```
-
-### LAN → Web/DNS
-
-```bash
+LAN para a DMZ
+Para testar o servidor Web:
 curl http://10.0.2.10
-dig @10.0.2.11 lab.test A
-```
-
-### Internet → Web
-
-O `r0` realiza DNAT para `10.0.2.10:80`. A partir do host onde o Kathará está rodando, teste:
-
-```bash
-curl -v http://localhost:8080
-```
-
-Também é possível verificar no `r0`:
-
-```bash
-iptables -t nat -L -n -v
-iptables -L FORWARD -n -v
-```
-
-### Internet → LAN e DMZ → LAN
-
-Não existem regras `NEW` permitindo esses fluxos no `fw`; portanto, eles terminam no `FORWARD DROP`.
-
-Uma tentativa iniciada no `web` em direção a `pc1`, por exemplo, não deve passar quando `perimeter.sh` está ativo:
-
-```bash
-# no web
-ping -c 3 10.0.1.10
-```
-
-A resposta de uma conexão iniciada e permitida pela LAN continua funcionando pela regra `ESTABLISHED,RELATED`.
-
-## 7. Experimento L2 — bloquear `pc2` pelo MAC
-
-O MAC de `pc2` foi fixado no `lab.conf`, evitando que a regra dependa de um endereço aleatório.
-
-### Antes
-
-No `fw`:
-
-```bash
-/root/firewall/baseline.sh
-```
-
-No `pc1` e no `pc2`:
-
-```bash
+Para testar o DNS:
+dig @10.0.2.11 lab.test
+Internet para o servidor Web
+O r0 faz um DNAT da porta TCP 80 para o servidor 10.0.2.10.
+A regra usada é:
+iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 80 \
+    -j DNAT --to-destination 10.0.2.10:80
+Assim, uma conexão recebida pelo r0 na porta 80 é encaminhada para o servidor Web da DMZ.
+No firewall existe uma regra permitindo esse tráfego:
+iptables -A FORWARD -i eth0 -o eth2 -d 10.0.2.10 \
+    -p tcp --dport 80 -m conntrack --ctstate NEW -j ACCEPT
+Já o acesso da Internet diretamente para a LAN continua bloqueado porque não existe uma regra liberando esse fluxo.
+7. L2 - bloqueio do pc2 pelo endereço MAC
+Nesse experimento, o pc2 é tratado como um dispositivo comprometido.
+Primeiro é necessário descobrir o MAC da interface dele:
+ip link show eth0
+Também é possível verificar pelo firewall:
+ip neigh show 10.0.1.11
+Depois, o MAC real deve ser colocado na variável PC2_MAC do fw.startup.
+A regra de bloqueio é:
+iptables -I FORWARD 1 -i eth1 -m mac --mac-source <MAC_DO_PC2> -j DROP
+Antes da regra, pc1 e pc2 devem conseguir gerar tráfego normalmente. Depois da regra, o esperado é que o pc2 seja bloqueado e o pc1 continue funcionando.
+Exemplos de teste:
+ping -c 3 10.0.2.10
 curl http://10.0.2.10
-```
-
-Os dois devem alcançar o Web.
-
-### Regra
-
-No `fw`:
-
-```bash
-/root/firewall/l2_block_pc2.sh
-iptables -L FORWARD -n -v --line-numbers
-```
-
-### Depois
-
-Repita o `curl` em `pc1` e `pc2`. `pc1` continua funcionando; `pc2` é bloqueado.
-
-Observe o enlace LAN:
-
-```bash
+O tráfego pode ser observado no firewall com:
 tcpdump -eni eth1
-```
-
-### Investigação
-
-O endereço MAC **não acompanha o pacote por toda a Internet**. MAC pertence ao enlace local e o cabeçalho de camada 2 é substituído a cada salto de roteamento. O `fw` consegue enxergar o MAC original de `pc2` porque `pc2` e `fw/eth1` estão no mesmo domínio Ethernet da LAN. Se houvesse um roteador L3 entre eles, o firewall enxergaria o MAC desse próximo salto, não o MAC original de `pc2`.
-
-## 8. Experimentos L3
-
-### A. ICMP entre LAN e DMZ
-
-**Antes:**
-
-```bash
-# fw
-/root/firewall/baseline.sh
-
-# pc1
+O endereço MAC funciona apenas no enlace local. Quando um pacote passa por um roteador, o cabeçalho de camada 2 é trocado. Por isso, o MAC original do pc2 não acompanha o pacote durante todo o caminho até a Internet.
+Nesse laboratório o firewall consegue ver o MAC do pc2 porque ele está diretamente ligado à LAN. Também é importante lembrar que um endereço MAC pode ser falsificado, então esse tipo de bloqueio não deve ser usado como única proteção.
+8. L3 - ICMP e bloqueio por IP
+8.1 Bloqueio de ICMP
+Primeiro pode ser feito um ping do pc1 para o servidor Web:
 ping -c 4 10.0.2.10
-```
-
-No `fw`, pode-se observar em outro terminal:
-
-```bash
+No firewall, o ICMP pode ser acompanhado com:
 tcpdump -ni any icmp
-```
-
-**Regra:**
-
-```bash
-# fw
-/root/firewall/l3_block_icmp.sh
-```
-
-**Depois:**
-
-```bash
-# pc1
-ping -c 4 10.0.2.10
-```
-
-O segundo ping deve falhar e o contador da regra deve aumentar:
-
-```bash
-iptables -L FORWARD -n -v --line-numbers
-```
-
-### B. Bloquear um destino IP
-
-Usamos `10.0.2.10` como destino controlado do laboratório.
-
-**Antes:**
-
-```bash
-# fw
-/root/firewall/baseline.sh
-
-# pc1
-curl -v http://10.0.2.10
-```
-
-**Regra:**
-
-```bash
-# fw
-/root/firewall/l3_block_destino.sh
-```
-
-**Depois:**
-
-```bash
-# pc1
-curl --connect-timeout 3 -v http://10.0.2.10
-```
-
-Bloquear apenas um IP não é uma solução completa para impedir acesso a um site: um domínio pode resolver para vários IPs; um mesmo IP pode hospedar vários sites; CDNs e serviços em nuvem podem mudar os endereços. Controles por domínio ou aplicação dão mais contexto.
-
-## 9. Experimento L4 — bloqueio de serviço por TCP/UDP
-
-A faixa `6881:6889` é usada para representar uma política de bloqueio de P2P/BitTorrent. O objetivo do experimento é demonstrar filtragem por protocolo e porta, não executar BitTorrent.
-
-No `web`, inicie o servidor de teste:
-
-```bash
-python3 /root/l4_test_server.py
-```
-
-### Antes
-
-No `fw`:
-
-```bash
-/root/firewall/baseline.sh
-```
-
-No `pc1`:
-
-```bash
-python3 /root/test_l4.py
-```
-
-O esperado é obter resposta em TCP e UDP na porta 6881.
-
-### Regra
-
-No `fw`:
-
-```bash
-/root/firewall/l4_block_p2p.sh
-```
-
-### Depois
-
-No `pc1`:
-
-```bash
-python3 /root/test_l4.py
-```
-
-Agora TCP e UDP devem falhar. No `fw`:
-
-```bash
-tcpdump -ni any 'tcp port 6881 or udp port 6881'
-iptables -L FORWARD -n -v --line-numbers
-```
-
-### Investigação
-
-Bloquear portas não garante que uma aplicação não funcione. Aplicações podem escolher portas alternativas ou dinâmicas e, em alguns casos, usar portas comuns a outros serviços. Uma política mais forte pode exigir identificação de aplicações, inspeção de protocolo e controles em L7, com atenção a criptografia, evasão e falsos positivos.
-
-## 10. L7 — proposta para discussão
-
-Uma possibilidade é um **WAF (Web Application Firewall)** diante do servidor Web.
-
-Ele pode analisar elementos da comunicação HTTP, como método, URL, cabeçalhos, parâmetros e corpo da requisição, permitindo políticas como bloquear `/admin`, permitir `/public` e reconhecer padrões de ataques à aplicação.
-
-Outros controles possíveis são DNS Filtering, proxy, Application Firewall e NGFW. Para esta atividade, L7 é apenas pesquisado e explicado; não precisa ser implementado.
-
-## 11. Defense in Depth
-
-Se o servidor `web` da DMZ for comprometido, isso **não significa acesso direto automático** a `pc1` e `pc2`.
-
-Ainda existem várias camadas de proteção:
-
-1. **DMZ e segmentação:** Web e LAN estão em redes distintas.
-2. **Firewall stateful:** a política final não permite novas conexões DMZ → LAN.
-3. **Default deny:** o que não foi explicitamente autorizado é descartado.
-4. **Filtragem L3/L4:** redes, IPs, protocolos e portas podem ser restringidos.
-5. **Controles nos próprios serviços:** autenticação, atualização, permissões e hardening reduzem o impacto de um comprometimento.
-6. **Monitoramento:** logs, contadores do `iptables` e capturas ajudam a identificar tentativas indevidas.
-7. **MGMT separada:** a rede de gerenciamento também fica segmentada.
-
-Isso representa **Defense in Depth**: a segurança não depende de uma única barreira; se uma camada falhar, outras ainda limitam movimento lateral e alcance do ataque.
-
-## 12. Evidências — formato pedido no enunciado
-
-Para cada experimento, registre exatamente:
-
-> **Antes da regra → Regra implementada → Depois da regra**
-
-A pasta `shared/evidencias/` é montada como `/shared/evidencias/` dentro dos nós e pode receber saídas reais dos comandos. Exemplos:
-
-```bash
-iptables -L FORWARD -n -v --line-numbers 2>&1 | tee /shared/evidencias/regras.txt
-ping -c 4 10.0.2.10 2>&1 | tee /shared/evidencias/l3_ping.txt
-```
-
-As evidências devem ser produzidas durante a execução local do laboratório; resultados não foram inventados dentro deste repositório.
-
-Para facilitar, há também o script opcional `coletar_evidencias.sh`. Depois de iniciar o laboratório, execute no host:
-
-```bash
-./coletar_evidencias.sh
-```
-
-Ele grava uma sequência de saídas reais em `shared/evidencias/`. Revise os arquivos e complemente com `tcpdump`/Wireshark quando necessário.
-
-## 13. Respostas finais
-
-**Quem pode se comunicar com quem?**  
-A LAN pode iniciar conexões para a Internet e para os serviços Web/DNS autorizados na DMZ. A Internet pode iniciar HTTP para o Web publicado. Internet → LAN e novas conexões DMZ → LAN são bloqueadas.
-
-**Que tipos de comunicação são permitidos ou bloqueados?**  
-A decisão combina origem/destino, estado da conexão, protocolo e porta. Os experimentos também demonstram bloqueio por MAC, ICMP, IP de destino e portas TCP/UDP.
-
-**Se uma camada falhar, quais outras ainda protegem a infraestrutura?**  
-Segmentação, DMZ, firewall stateful/default deny, filtros de rede/transporte e controles locais nos serviços continuam reduzindo o alcance do ataque.
+Depois é aplicada a regra:
+iptables -I FORWARD 1 -i eth1 -o eth2 -p icmp -j DROP
+Ao repetir o ping, ele deve deixar de funcionar.
+Isso não significa que todo o acesso ao servidor foi bloqueado. Por exemplo, uma requisição HTTP ainda pode funcionar:
+curl http://10.0.2.10
+Nesse caso o ICMP foi bloqueado, mas o TCP da porta 80 continua permitido.
+8.2 Bloqueio de um destino IP
+Para representar um destino que a organização decidiu bloquear, pode ser usado um endereço do próprio laboratório.
+Exemplo:
+iptables -I FORWARD 1 -i eth1 -s 10.0.1.0/24 -d 10.0.2.10 -j DROP
+Depois da regra, o acesso da LAN ao endereço 10.0.2.10 deve ser bloqueado.
+Um bloqueio por IP tem algumas limitações. Um domínio pode usar vários endereços, o endereço pode mudar com o tempo e um mesmo IP pode hospedar vários sites. Por isso, bloquear somente um IP não é uma solução completa para controlar o acesso a um site.
+9. L4 - bloqueio por portas
+Para representar uma política de bloqueio de serviços P2P, foram usadas as portas TCP e UDP de 6881 até 6889, uma faixa tradicionalmente associada ao BitTorrent.
+As regras são:
+iptables -A FORWARD -p tcp --dport 6881:6889 -j DROP
+iptables -A FORWARD -p udp --dport 6881:6889 -j DROP
+Para testar, pode ser aberto temporariamente um serviço na porta 6881 do servidor Web:
+nc -lvkp 6881
+No pc1:
+nc -vz -w 2 10.0.2.10 6881
+Depois da aplicação da regra, a conexão nessa porta deve ser bloqueada.
+Esse tipo de regra também tem limitações. Um programa P2P pode usar outras portas ou escolher portas dinamicamente. Então bloquear uma faixa de portas ajuda, mas não garante que uma aplicação específica seja totalmente impedida de funcionar.
+10. Controle na camada de aplicação (L7)
+Para L7, uma possibilidade seria usar um WAF (Web Application Firewall) na frente do servidor Web.
+Diferente das regras anteriores, que olham principalmente MAC, IP, protocolo e porta, um WAF consegue analisar informações da própria aplicação Web, como URL, método HTTP, cabeçalhos, parâmetros e corpo da requisição.
+Um exemplo seria permitir:
+/public
+e bloquear:
+/admin
+mesmo que os dois caminhos usem o mesmo IP e a mesma porta.
+Uma tecnologia que poderia ser usada nesse cenário é o ModSecurity com regras do OWASP Core Rule Set. Outra opção seria utilizar proxy, DNS Filtering ou um NGFW, dependendo do tipo de controle desejado.
+Essa parte não precisa ser implementada na tarefa, apenas estudada e discutida.
+11. Defense in Depth
+Mesmo que o servidor Web da DMZ seja comprometido, isso não significa que o atacante terá acesso direto ao pc1 e ao pc2.
+O servidor Web está em uma rede separada da LAN. Além disso, o firewall não permite novas conexões da DMZ para a LAN.
+Nesse caso, ainda existem várias camadas de proteção:
+- separação entre LAN e DMZ;
+- firewall com política default deny;
+- filtragem por IP, protocolo e porta;
+- controle stateful das conexões;
+- regras e permissões nos próprios serviços;
+- rede de gerenciamento separada;
+- monitoramento dos pacotes e logs.
+A ideia de Defense in Depth é justamente não depender de uma única proteção. Se uma camada falhar, as outras ainda podem limitar o que um atacante consegue alcançar dentro da rede.
