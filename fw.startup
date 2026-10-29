@@ -13,10 +13,21 @@ ip addr add 10.0.2.1/24 dev eth2 2>/dev/null || true
 ip addr add 10.0.3.1/24 dev eth3 2>/dev/null || true
 
 ip route replace default via 198.51.100.2 dev eth0
+<<<<<<< HEAD
 sysctl -w net.ipv4.ip_forward=1 >/dev/null
+=======
+if [ "$(sysctl -n net.ipv4.ip_forward)" != 1 ]; then
+    echo 'ERRO: o encaminhamento IPv4 não está habilitado no firewall.' >&2
+    exit 1
+fi
+>>>>>>> d1501a0 (Defense in Depth)
 
 chmod +x /root/firewall/*.sh 2>/dev/null || true
 
 # O laboratório sobe já com a política final de perímetro implementada.
 # Para reproduzir a baseline inicial, execute /root/firewall/baseline.sh.
+<<<<<<< HEAD
 /root/firewall/perimeter.sh
+=======
+sh /root/firewall/perimeter.sh
+>>>>>>> d1501a0 (Defense in Depth)

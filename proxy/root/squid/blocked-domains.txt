@@ -1,0 +1,2 @@
+# Domínios bloqueados; o Squid também bloqueia seus subdomínios.
+example.com

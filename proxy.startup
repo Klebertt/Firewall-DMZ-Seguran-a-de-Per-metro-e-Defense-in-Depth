@@ -1,0 +1,61 @@
+#!/bin/sh
+set -eu
+
+ip addr add 10.0.1.20/24 dev eth0 2>/dev/null || true
+ip route replace default via 10.0.1.1 dev eth0
+
+if ! command -v squid >/dev/null 2>&1; then
+    echo 'ERRO: Squid não está instalado na imagem do nó proxy.' >&2
+    exit 1
+fi
+
+if command -v service >/dev/null 2>&1; then
+    service squid stop >/dev/null 2>&1 || true
+fi
+
+mkdir -p /etc/squid /var/cache/squid /var/log/squid
+chown -R proxy:proxy /var/cache/squid /var/log/squid
+install -m 0644 /root/squid/blocked-domains.txt /etc/squid/blocked-domains.txt
+install -m 0644 /root/squid/pc2-blocked-domains.txt /etc/squid/pc2-blocked-domains.txt
+cat > /etc/squid/squid.conf <<'EOF'
+http_port 3128
+# Only the two LAN workstations may use this forward proxy.
+acl pc1 src 10.0.1.10/32
+acl pc2 src 10.0.1.11/32
+acl SSL_ports port 443
+acl Safe_ports port 80
+acl Safe_ports port 443
+acl Safe_ports port 1025-65535
+acl CONNECT method CONNECT
+acl blocked_domains dstdomain "/etc/squid/blocked-domains.txt"
+# Apply client-specific and general domain denials before allowing clients.
+acl pc2_blocked_domains dstdomain "/etc/squid/pc2-blocked-domains.txt"
+http_access deny !Safe_ports
+http_access deny CONNECT !SSL_ports
+http_access deny pc2 pc2_blocked_domains
+http_access deny blocked_domains
+http_access allow pc1
+http_access allow pc2
+http_access deny all
+access_log /var/log/squid/access.log
+cache_log /var/log/squid/cache.log
+# Cache eligible HTTP responses; HTTPS CONNECT traffic remains a TLS tunnel.
+cache_mem 64 MB
+maximum_object_size 16 MB
+cache_dir ufs /var/cache/squid 100 16 256
+dns_nameservers 1.1.1.1 8.8.8.8
+EOF
+
+squid -k parse -f /etc/squid/squid.conf
+squid -z -N -f /etc/squid/squid.conf
+squid -N -f /etc/squid/squid.conf > /tmp/squid.log 2>&1 &
+attempts=0
+while [ "$attempts" -lt 10 ] && ! ss -lnt | grep -q ':3128 '; do
+    sleep 1
+    attempts=$((attempts + 1))
+done
+if ! ss -lnt | grep -q ':3128 '; then
+    cat /tmp/squid.log >&2
+    echo 'ERRO: o Squid não iniciou.' >&2
+    exit 1
+fi

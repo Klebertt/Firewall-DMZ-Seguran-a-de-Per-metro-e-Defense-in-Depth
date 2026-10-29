@@ -1,8 +1,17 @@
 #!/bin/sh
 set -eu
+<<<<<<< HEAD
 ip addr add 10.0.2.10/24 dev eth0 2>/dev/null || true
 ip route replace default via 10.0.2.1 dev eth0
 
+=======
+ip addr add 10.0.2.20/24 dev eth0 2>/dev/null || true
+ip route replace default via 10.0.2.1 dev eth0
+
+# HTTP da DMZ deve ser acessado somente pelo NGINX Reverse Proxy.
+iptables -I INPUT 1 -p tcp --dport 80 ! -s 10.0.2.10 -j DROP
+
+>>>>>>> d1501a0 (Defense in Depth)
 mkdir -p /var/www/lab
 printf 'Servidor Web da DMZ - Kathara Firewall Lab\n' > /var/www/lab/index.html
 

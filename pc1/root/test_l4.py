@@ -2,7 +2,11 @@
 """Cliente TCP+UDP para testar a porta 6881 do servidor web."""
 import socket
 
+<<<<<<< HEAD
 HOST = "10.0.2.10"
+=======
+HOST = "10.0.2.20"
+>>>>>>> d1501a0 (Defense in Depth)
 PORT = 6881
 TIMEOUT = 2
 

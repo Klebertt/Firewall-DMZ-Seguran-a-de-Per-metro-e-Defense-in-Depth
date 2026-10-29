@@ -17,6 +17,7 @@ iptables -P OUTPUT ACCEPT
 iptables -A INPUT -i lo -j ACCEPT
 iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
+<<<<<<< HEAD
 # Respostas pertencentes a fluxos já autorizados.
 iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
@@ -25,6 +26,34 @@ iptables -A FORWARD -i eth1 -o eth0 -s 10.0.1.0/24 \
     -m conntrack --ctstate NEW -j ACCEPT
 
 # LAN -> servidor Web da DMZ: HTTP/HTTPS.
+=======
+# Bloqueia acesso HTTP direto da Internet ao servidor Web.
+iptables -A FORWARD -i eth0 -o eth2 -d 10.0.2.20 \
+    -p tcp --dport 80 -j DROP
+
+# Respostas pertencentes a fluxos já autorizados.
+iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+# Squid -> Internet: HTTP/HTTPS e DNS para resolução de nomes.
+iptables -A FORWARD -i eth1 -o eth0 -s 10.0.1.20 \
+    -p tcp -m multiport --dports 80,443 \
+    -m conntrack --ctstate NEW -j ACCEPT
+iptables -A FORWARD -i eth1 -o eth0 -s 10.0.1.20 \
+    -p udp --dport 53 -m conntrack --ctstate NEW -j ACCEPT
+iptables -A FORWARD -i eth1 -o eth0 -s 10.0.1.20 \
+    -p tcp --dport 53 -m conntrack --ctstate NEW -j ACCEPT
+
+# NGINX -> repositórios para instalação/atualização do pacote no startup.
+iptables -A FORWARD -i eth2 -o eth0 -s 10.0.2.10 \
+    -p tcp -m multiport --dports 80,443 \
+    -m conntrack --ctstate NEW -j ACCEPT
+iptables -A FORWARD -i eth2 -o eth0 -s 10.0.2.10 \
+    -p udp --dport 53 -m conntrack --ctstate NEW -j ACCEPT
+iptables -A FORWARD -i eth2 -o eth0 -s 10.0.2.10 \
+    -p tcp --dport 53 -m conntrack --ctstate NEW -j ACCEPT
+
+# LAN -> NGINX Reverse Proxy da DMZ.
+>>>>>>> d1501a0 (Defense in Depth)
 iptables -A FORWARD -i eth1 -o eth2 -s 10.0.1.0/24 -d 10.0.2.10 \
     -p tcp -m multiport --dports 80,443 \
     -m conntrack --ctstate NEW -j ACCEPT
@@ -35,11 +64,20 @@ iptables -A FORWARD -i eth1 -o eth2 -s 10.0.1.0/24 -d 10.0.2.11 \
 iptables -A FORWARD -i eth1 -o eth2 -s 10.0.1.0/24 -d 10.0.2.11 \
     -p tcp --dport 53 -m conntrack --ctstate NEW -j ACCEPT
 
+<<<<<<< HEAD
 # Internet -> Web da DMZ: o DNAT ocorre no r0; no fw o destino já é 10.0.2.10.
 iptables -A FORWARD -i eth0 -o eth2 -d 10.0.2.10 \
     -p tcp --dport 80 -m conntrack --ctstate NEW -j ACCEPT
 
 # Não há regras NEW para Internet -> LAN nem DMZ -> LAN.
+=======
+# Internet -> NGINX da DMZ: o DNAT ocorre no r0; o web não recebe tráfego público.
+iptables -A FORWARD -i eth0 -o eth2 -d 10.0.2.10 \
+    -p tcp -m multiport --dports 80,443 \
+    -m conntrack --ctstate NEW -j ACCEPT
+
+# Não há regras NEW para Internet -> LAN, Internet -> web nem DMZ -> LAN.
+>>>>>>> d1501a0 (Defense in Depth)
 # Esses fluxos são bloqueados pelo FORWARD DROP.
 
 # Log limitado dos descartes para apoiar os experimentos.

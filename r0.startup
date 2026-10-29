@@ -22,7 +22,14 @@ done
 
 # Todas as redes internas estão atrás do fw (198.51.100.1).
 ip route replace 10.0.0.0/16 via 198.51.100.1 dev eth0
+<<<<<<< HEAD
 sysctl -w net.ipv4.ip_forward=1 >/dev/null
+=======
+if [ "$(sysctl -n net.ipv4.ip_forward)" != 1 ]; then
+    echo 'ERRO: o encaminhamento IPv4 não está habilitado em r0.' >&2
+    exit 1
+fi
+>>>>>>> d1501a0 (Defense in Depth)
 
 # Regras do roteador de borda/NAT.
 iptables -F
@@ -41,12 +48,24 @@ iptables -A FORWARD -i eth0 -o eth1 -s 10.0.0.0/16 \
     -m conntrack --ctstate NEW -j ACCEPT
 iptables -t nat -A POSTROUTING -o eth1 -s 10.0.0.0/16 -j MASQUERADE
 
+<<<<<<< HEAD
 # Internet -> servidor Web da DMZ.
 # O pacote é traduzido aqui e depois atravessa o fw até 10.0.2.10:80.
+=======
+# Internet -> NGINX Reverse Proxy da DMZ.
+# Os pacotes são traduzidos aqui e depois atravessam o fw até o rp.
+>>>>>>> d1501a0 (Defense in Depth)
 iptables -t nat -A PREROUTING -i eth1 -p tcp --dport 80 \
     -j DNAT --to-destination 10.0.2.10:80
 iptables -A FORWARD -i eth1 -o eth0 -p tcp -d 10.0.2.10 --dport 80 \
     -m conntrack --ctstate NEW -j ACCEPT
+<<<<<<< HEAD
+=======
+iptables -t nat -A PREROUTING -i eth1 -p tcp --dport 443 \
+    -j DNAT --to-destination 10.0.2.10:443
+iptables -A FORWARD -i eth1 -o eth0 -p tcp -d 10.0.2.10 --dport 443 \
+    -m conntrack --ctstate NEW -j ACCEPT
+>>>>>>> d1501a0 (Defense in Depth)
 
 # Registra informações úteis para diagnóstico.
 {
